@@ -9,15 +9,33 @@ using static Typing;
 public class Parser(List<Token> Tokens) {
     private int current = 0;
 
-    public Expression Parse() {
-        try {
-            return Expr();
+    public BlockExpression Parse() {
+        List<Expression> statements = new();
+        while (!IsAtEnd) {
+            statements.Add(Statement());
         }
-        catch (ParseError) {
-            return null;
-        }
+
+        return Expression.Block(statements); 
     }
 
+    private Expression Statement() {
+        if (Match(PRINT)) return PrintStatement();
+        return ExpressionStatement();
+    }
+
+    private Expression PrintStatement() {
+        Expression value = Expr();
+        Consume(SEMICOLON, "Expect ';' after value.");
+        value = EnsureType(value, typeof(object));
+        return Expression.Call(writeLine, value);
+    }
+
+    private Expression ExpressionStatement() {
+        Expression value = Expr();
+        Consume(SEMICOLON, "Expect ';' after expression.");
+        return value;
+    }
+    
     private Expression Expr() {
         return Equality();
     }
@@ -109,11 +127,13 @@ public class Parser(List<Token> Tokens) {
             if (op.Type == PLUS && left.Type == typeof(string)) {
                 left = EnsureType(left, typeof(object));
                 right = EnsureType(right, typeof(object));
-                return Expression.Call(ConcatMethodInfo, left, right);
+                left = Expression.Call(ConcatMethodInfo, left, right);
             }
-            left = EnsureNumericType(left);
-            right = EnsureNumericType(right);
-            left = Expression.MakeBinary(BinaryExprTypes[op.Type], left, right);
+            else {
+                left = EnsureNumericType(left);
+                right = EnsureNumericType(right);
+                left = Expression.MakeBinary(BinaryExprTypes[op.Type], left, right);
+            }
         }
         return left;
     }

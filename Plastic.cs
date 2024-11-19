@@ -74,23 +74,13 @@ public static class Plastic {
         List<Token> tokens = lexer.LexSource();
         Time("Lexing");
         Parser parser = new Parser(tokens);
-        Expression ToExecute = parser.Parse();
+        BlockExpression ToExecute = parser.Parse();
         Time("Parsing");
         if (HadError) return;
-
-        if (ToExecute.Type == typeof(void)) {
-            Expression<Action> lambda = Expression.Lambda<Action>(ToExecute);
-            Action compiled = lambda.Compile();
-            Time("Compiled");
-            compiled();
-        }
-        else {
-            Expression<Func<object>> lambda = Expression.Lambda<Func<object>>(Expression.Convert(ToExecute, typeof(object)));
-            Func<object> compiled = lambda.Compile();
-            Time("Compilation");
-            object result = compiled();
-            Console.WriteLine(result);
-        }
+        Expression<Action> lambda = Expression.Lambda<Action>(ToExecute);
+        Action compiled = lambda.Compile();
+        Time("Compiled");
+        compiled();
         Time("Execution");
     }
     
