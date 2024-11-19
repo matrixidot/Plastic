@@ -6,8 +6,20 @@ public static partial class Typing {
     public static Expression EnsureType(Expression expr, Type targetType) {
         return expr.Type != targetType ? Expression.Convert(expr, targetType) : expr;
     }
+
+    public static (Expression, Expression) PromoteNumericTypes(Expression left, Expression right) {
+        if (NumericTypes.Contains(left.Type) && NumericTypes.Contains(right.Type)) {
+            if (left.Type == right.Type) return (left, right);
+            Type toPromote = NumericPromotionRules[(left.Type, right.Type)];
+            left = EnsureType(left, toPromote);
+            right = EnsureType(right, toPromote);
+            return (left, right);
+        }
+        throw new Exception($"{left.Type} or {right.Type} is not numeric.");
+    } 
+    
     public static Expression EnsureNumericType(Expression expr) {
-        if (expr.Type == typeof(int) || expr.Type == typeof(long) || expr.Type == typeof(double)) {
+        if (NumericTypes.Contains(expr.Type)) {
             return expr;
         }
         throw new Exception($"Operand is not a numeric type: {expr.Type}");

@@ -9,9 +9,9 @@ using static API.Lexing.TokenType;
 
 public static class Plastic {
     private static double timer;
-    private static bool timing = false;
-    private static bool HadError = false;
-    private static bool HadRuntimeError = false;
+    private static bool timing;
+    private static bool HadError;
+    private static bool HadRuntimeError;
     
     public static void Main(string[] args) {
         switch (args.Length) {
@@ -38,6 +38,13 @@ public static class Plastic {
             default: {
                 Console.Write("Enter script path to run: ");
                 string path = Console.ReadLine();
+                if (path.ToLower() == ".timer") {
+                    timing = !timing;
+                    Console.WriteLine($"Timing: {timing}");
+                    Console.Write("Enter script path to run: ");
+                    path = Console.ReadLine();
+                }
+                
                 if (!Path.Exists(path)) {
                     Console.WriteLine($"Error: Could not find file '{path}'");
                     Main(args);
@@ -65,10 +72,10 @@ public static class Plastic {
         InitTimer();
         Lexer lexer = new Lexer(source);
         List<Token> tokens = lexer.LexSource();
-        Time($"Lexing done: {tokens.Count} tokens found.");
+        Time("Lexing");
         Parser parser = new Parser(tokens);
         Expression ToExecute = parser.Parse();
-        Time("Parsing done");
+        Time("Parsing");
         if (HadError) return;
 
         if (ToExecute.Type == typeof(void)) {
@@ -80,11 +87,11 @@ public static class Plastic {
         else {
             Expression<Func<object>> lambda = Expression.Lambda<Func<object>>(Expression.Convert(ToExecute, typeof(object)));
             Func<object> compiled = lambda.Compile();
-            Time("Compiled");
+            Time("Compilation");
             object result = compiled();
             Console.WriteLine(result);
         }
-        Time("Executed");
+        Time("Execution");
     }
     
     
@@ -99,13 +106,13 @@ public static class Plastic {
         HadError = true;
     }
     
-    public static void Time(string message) {
+    private static void Time(string process) {
         if (!timing) return;
-        Console.WriteLine($"{message}\nCompleted in {(double) DateTime.Now.Ticks / TimeSpan.TicksPerMillisecond / 1000.0 - timer} seconds.");
+        Console.WriteLine($"[{process}]: Completed in {(double) DateTime.Now.Ticks / TimeSpan.TicksPerMillisecond / 1000.0 - timer} seconds.");
         timer = (double) DateTime.Now.Ticks / TimeSpan.TicksPerMillisecond / 1000.0;
     }
 
-    public static void InitTimer() {
+    private static void InitTimer() {
         timer = (double) DateTime.Now.Ticks / TimeSpan.TicksPerMillisecond / 1000.0;
     }
 }

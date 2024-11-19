@@ -21,25 +21,81 @@ public class Parser(List<Token> Tokens) {
     private Expression Expr() {
         return Equality();
     }
-
+    
     private Expression Equality() {
         Expression left = Comparison();
         while (Match(BANG_EQUAL, EQUAL_EQUAL)) {
             Token op = Previous;
             Expression right = Comparison();
-            left = EnsureType(left, typeof(object));
-            right = EnsureType(right, typeof(object));
+            if (left.Type == right.Type) {
+            }
+            else if (NumericTypes.Contains(left.Type) && NumericTypes.Contains(right.Type)) {
+                (left, right) = PromoteNumericTypes(left, right);
+            }
+            else {
+                left = EnsureType(left, typeof(object));
+                right = EnsureType(right, typeof(object));
+            }
             left = Expression.MakeBinary(BinaryExprTypes[op.Type], left, right);
         }
         return left;
     }
 
     private Expression Comparison() {
-        Expression left = Term();
+        Expression left = BitwiseOr();
         while (Match(GREATER, GREATER_EQUAL, LESS, LESS_EQUAL)) {
             Token op = Previous;
+            Expression right = BitwiseOr();
+            (left, right) = PromoteNumericTypes(left, right);
+            left = Expression.MakeBinary(BinaryExprTypes[op.Type], left, right);
+        }
+        return left;
+    }
+
+    private Expression BitwiseOr() {
+        Expression left = BitwiseXor();
+        while (Match(BIN_OR)) {
+            Token op = Previous;
+            Expression right = BitwiseXor();
+            left = EnsureIntegerType(left);
+            right = EnsureIntegerType(right);
+            left = Expression.MakeBinary(BinaryExprTypes[op.Type], left, right);
+        }
+
+        return left;
+    }
+
+    private Expression BitwiseXor() {
+        Expression left = BitwiseAnd();
+        while (Match(BIN_AND)) {
+            Token op = Previous;
+            Expression right = BitwiseAnd();
+            left = EnsureIntegerType(left);
+            right = EnsureIntegerType(right);
+            left = Expression.MakeBinary(BinaryExprTypes[op.Type], left, right);
+        }
+        return left;
+    }
+
+    private Expression BitwiseAnd() {
+        Expression left = Shift();
+        while (Match(BIN_AND)) {
+            Token op = Previous;
+            Expression right = Shift();
+            left = EnsureIntegerType(left);
+            right = EnsureIntegerType(right);
+            left = Expression.MakeBinary(BinaryExprTypes[op.Type], left, right);
+        }
+        return left;
+    }
+
+    private Expression Shift() {
+        Expression left = Term();
+        while (Match(LEFT_SHIFT, RIGHT_SHIFT)) {
+            Token op = Previous;
             Expression right = Term();
-            
+            left = EnsureIntegerType(left);
+            right = EnsureIntegerType(right);
             left = Expression.MakeBinary(BinaryExprTypes[op.Type], left, right);
         }
         return left;
@@ -189,6 +245,11 @@ public class Parser(List<Token> Tokens) {
         { LESS_EQUAL, ExpressionType.LessThanOrEqual },
         { GREATER, ExpressionType.GreaterThan },
         { GREATER_EQUAL, ExpressionType.GreaterThanOrEqual },
+        { BIN_OR, ExpressionType.Or },
+        { BIN_XOR, ExpressionType.ExclusiveOr },
+        { BIN_AND, ExpressionType.And },
+        { LEFT_SHIFT, ExpressionType.LeftShift },
+        { RIGHT_SHIFT, ExpressionType.RightShift },
         { PLUS, ExpressionType.Add },
         { MINUS, ExpressionType.Subtract },
         { STAR, ExpressionType.Multiply },
