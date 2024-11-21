@@ -1,4 +1,6 @@
-﻿namespace Plastic.API.Parsing;
+﻿using System.Reflection;
+
+namespace Plastic.API.Parsing;
 
 using System.Linq.Expressions;
 using Errors;
@@ -9,50 +11,162 @@ using static Typing;
 public class Parser(List<Token> Tokens) {
     private int current = 0;
 
+    // Symbol table to store global variables
+    private static readonly Dictionary<string, Variable> globalVariables = new();
+
+    // === Core Parsing Methods ===
+
+    /// <summary>
+    /// Entry point for parsing.
+    /// </summary>
     public BlockExpression Parse() {
         List<Expression> statements = new();
         while (!IsAtEnd) {
-            statements.Add(Statement());
+            statements.Add(Declaration());
         }
-
-        return Expression.Block(statements); 
+        return Expression.Block(statements);
     }
 
+    /// <summary>
+    /// Handles declarations of variables and other statements.
+    /// </summary>
+    private Expression Declaration() {
+        try {
+            if (MatchType(out Type type)) {
+                return VarDeclaration(type);
+            }
+            return Statement();
+        }
+        catch (ParseError error) {
+            Synchronize();
+            return Expression.Empty();
+        }
+    }
+
+    /// <summary>
+    /// Handles variable declarations.
+    /// </summary>
+    private Expression VarDeclaration(Type type) {
+        Token name = Consume(IDENTIFIER, "Expect variable name.");
+        Expression initializer = null;
+
+        if (Match(EQUAL)) {
+            initializer = Expr();
+            initializer = EnsureType(initializer, type);
+        }
+
+        Consume(SEMICOLON, "Expect ';' after variable declaration.");
+
+        ParameterExpression variableExpr = Expression.Variable(type, name.Lexeme);
+
+        if (!globalVariables.TryAdd(name.Lexeme, new(name.Lexeme, type, variableExpr, null))) {
+            throw Error(name, $"Variable '{name.Lexeme}' is already declared.");
+        }
+
+        return initializer == null
+            ? variableExpr
+            : Expression.Block(new[] { variableExpr }, Expression.Assign(variableExpr, initializer));
+    }
+
+    /// <summary>
+    /// Handles statements such as print or assignments.
+    /// </summary>
     private Expression Statement() {
         if (Match(PRINT)) return PrintStatement();
+        if (Match(IDENTIFIER)) return VariableOrAssignment(Previous);
         return ExpressionStatement();
     }
 
+    /// <summary>
+    /// Handles assignments or variable access.
+    /// </summary>
+    private Expression VariableOrAssignment(Token identifier) {
+        if (!globalVariables.TryGetValue(identifier.Lexeme, out Variable variable)) {
+            throw Error(identifier, $"Variable '{identifier.Lexeme}' is not defined.");
+        }
+
+        if (Match(EQUAL)) {
+            Expression value = Expr();
+            value = EnsureType(value, variable.Type);
+
+            globalVariables[identifier.Lexeme] = variable with { Value = value };
+
+            return Expression.Assign(variable.Expr, value);
+        }
+
+        return variable.Expr;
+    }
+
+    /// <summary>
+    /// Handles print statements.
+    /// </summary>
     private Expression PrintStatement() {
         Expression value = Expr();
         Consume(SEMICOLON, "Expect ';' after value.");
         value = EnsureType(value, typeof(object));
-        return Expression.Call(writeLine, value);
+        return Expression.Call(
+            typeof(Console).GetMethod("WriteLine", new[] { typeof(object) }),
+            value
+        );
     }
 
+    /// <summary>
+    /// Handles general expressions as statements.
+    /// </summary>
     private Expression ExpressionStatement() {
         Expression value = Expr();
         Consume(SEMICOLON, "Expect ';' after expression.");
         return value;
     }
-    
-    private Expression Expr() {
-        return Equality();
+
+    // === Expression Parsing ===
+
+    private Expression Expr() => Assignment();
+
+    private Expression Assignment() {
+        Expression expr = Equality(); // Start with the equality expression.
+
+        if (Match(EQUAL, PLUS_EQUAL, MINUS_EQUAL, STAR_EQUAL, SLASH_EQUAL, MOD_EQUAL, POW_EQUAL)) {
+            Token op = Previous;
+            Expression value = Assignment(); // Recursively parse the right-hand side of the assignment.
+
+            if (expr is ParameterExpression variableExpr) {
+                // Ensure type compatibility
+                value = EnsureType(value, variableExpr.Type);
+
+                return op.Type switch {
+                    EQUAL => Expression.Assign(variableExpr, value),
+                    PLUS_EQUAL => Expression.AddAssign(variableExpr, value),
+                    MINUS_EQUAL => Expression.SubtractAssign(variableExpr, value),
+                    STAR_EQUAL => Expression.MultiplyAssign(variableExpr, value),
+                    SLASH_EQUAL => Expression.DivideAssign(variableExpr, value),
+                    MOD_EQUAL => Expression.ModuloAssign(variableExpr, value),
+                    POW_EQUAL => Expression.PowerAssign(variableExpr, value), // Custom implementation for **=
+                    _ => throw Error(op, "Unsupported assignment operator.")
+                };
+            }
+
+            throw Error(op, "Invalid assignment target.");
+        }
+
+        return expr;
     }
-    
+
+
+
     private Expression Equality() {
         Expression left = Comparison();
         while (Match(BANG_EQUAL, EQUAL_EQUAL)) {
             Token op = Previous;
             Expression right = Comparison();
-            if (left.Type == right.Type) {
-            }
-            else if (NumericTypes.Contains(left.Type) && NumericTypes.Contains(right.Type)) {
-                (left, right) = PromoteNumericTypes(left, right);
-            }
-            else {
-                left = EnsureType(left, typeof(object));
-                right = EnsureType(right, typeof(object));
+
+            if (left.Type != right.Type) {
+                if (NumericTypes.Contains(left.Type) && NumericTypes.Contains(right.Type)) {
+                    (left, right) = PromoteNumericTypes(left, right);
+                } else {
+                    left = EnsureType(left, typeof(object));
+                    right = EnsureType(right, typeof(object));
+                }
             }
             left = Expression.MakeBinary(BinaryExprTypes[op.Type], left, right);
         }
@@ -79,7 +193,6 @@ public class Parser(List<Token> Tokens) {
             right = EnsureIntegerType(right);
             left = Expression.MakeBinary(BinaryExprTypes[op.Type], left, right);
         }
-
         return left;
     }
 
@@ -128,8 +241,7 @@ public class Parser(List<Token> Tokens) {
                 left = EnsureType(left, typeof(object));
                 right = EnsureType(right, typeof(object));
                 left = Expression.Call(ConcatMethodInfo, left, right);
-            }
-            else {
+            } else {
                 left = EnsureNumericType(left);
                 right = EnsureNumericType(right);
                 left = Expression.MakeBinary(BinaryExprTypes[op.Type], left, right);
@@ -165,7 +277,6 @@ public class Parser(List<Token> Tokens) {
         if (Match(BANG, MINUS, BIN_NOT)) {
             Token op = Previous;
             Expression right = Unary();
-            
             right = op.Type switch {
                 BANG => EnsureBooleanType(right),
                 MINUS => EnsureNumericType(right),
@@ -175,31 +286,61 @@ public class Parser(List<Token> Tokens) {
         }
         return Primary();
     }
-    
+
     private Expression Primary() {
-        if (Match(FALSE)) return True;
-        if (Match(TRUE)) return False;
+    // Handle literals
+        if (Match(FALSE)) return False;
+        if (Match(TRUE)) return True;
         if (Match(NULL)) return Null;
         if (Match(NUMBER)) return Expression.Constant(Previous.Literal, Previous.Literal.GetType());
         if (Match(STRING_LIT)) return Expression.Constant(Previous.Literal, typeof(string));
         if (Match(CHAR_LIT)) return Expression.Constant(Previous.Literal, typeof(char));
 
+        // Handle prefix increment (++) and decrement (--)
+        if (Match(INCREMENT, DECREMENT)) {
+            Token op = Previous; // Save the operator (++ or --)
+            if (Match(IDENTIFIER)) {
+                string name = Previous.Lexeme;
+                if (globalVariables.TryGetValue(name, out Variable variable)) {
+                    ParameterExpression variableExpr = variable.Expr;
+                    return op.Type == INCREMENT
+                        ? Expression.PreIncrementAssign(variableExpr)
+                        : Expression.PreDecrementAssign(variableExpr);
+                }
+                throw Error(Previous, $"Undefined variable '{name}'.");
+            }
+            throw Error(Peek, "Expected variable after prefix operator.");
+        }
+        if (Match(IDENTIFIER)) {
+            string name = Previous.Lexeme;
+
+            if (globalVariables.TryGetValue(name, out Variable variable)) {
+                ParameterExpression variableExpr = variable.Expr;
+                if (Match(INCREMENT)) {
+                    return Expression.PostIncrementAssign(variableExpr);
+                }
+                if (Match(DECREMENT)) {
+                    return Expression.PostDecrementAssign(variableExpr);
+                }
+                return variableExpr;
+            }
+
+            throw Error(Previous, $"Undefined variable '{name}'.");
+        }
+
+        // Handle grouped expressions
         if (Match(L_PAREN)) {
             Expression expr = Expr();
             Consume(R_PAREN, "Expected ')' after expression.");
             return expr;
         }
-        throw Error(Peek, "Expect expression");
-    }
-    
-    
-    
-    private Token Consume(TokenType type, string text) {
-        if (Check(type)) return Advance();
 
-        throw Error(Peek, text);
+        throw Error(Peek, "Expect expression.");
     }
-    
+
+
+    // === Utility and Helper Methods ===
+
     private bool Match(params TokenType[] types) {
         foreach (TokenType type in types) {
             if (Check(type)) {
@@ -210,14 +351,16 @@ public class Parser(List<Token> Tokens) {
         return false;
     }
 
-    private bool Check(TokenType type) {
-        if (IsAtEnd) return false;
-        return Peek.Type == type;
-    }
+    private bool Check(TokenType type) => !IsAtEnd && Peek.Type == type;
 
     private Token Advance() {
         if (!IsAtEnd) current++;
         return Previous;
+    }
+
+    private Token Consume(TokenType type, string message) {
+        if (Check(type)) return Advance();
+        throw Error(Peek, message);
     }
 
     private ParseError Error(Token token, string message) {
@@ -229,7 +372,6 @@ public class Parser(List<Token> Tokens) {
         Advance();
         while (!IsAtEnd) {
             if (Previous.Type == SEMICOLON) return;
-
             switch (Peek.Type) {
                 case CLASS:
                 case INT:
@@ -253,7 +395,32 @@ public class Parser(List<Token> Tokens) {
             Advance();
         }
     }
-    
+
+    private bool MatchType(out Type type) {
+        if (Match(INT)) { type = typeof(int); return true; }
+        if (Match(LONG)) { type = typeof(long); return true; }
+        if (Match(DOUBLE)) { type = typeof(double); return true; }
+        if (Match(STRING_TYPE)) { type = typeof(string); return true; }
+        if (Match(CHAR_TYPE)) { type = typeof(char); return true; }
+        if (Match(BOOL)) { type = typeof(bool); return true; }
+        if (Match(OBJECT)) { type = typeof(object); return true; }
+        if (Match(IDENTIFIER)) {
+            type = ResolveUserDefinedType(Previous.Lexeme);
+            return true;
+        }
+        type = null;
+        return false;
+    }
+
+    private Type ResolveUserDefinedType(string typeName) {
+        Type? type = Type.GetType(typeName);
+        if (type == null) {
+            throw Error(Previous, $"{typeName} is not a defined type.");
+        }
+
+        return type;
+    }
+
     private bool IsAtEnd => Peek.Type == EOF;
     private Token Peek => Tokens[current];
     private Token Previous => Tokens[current - 1];

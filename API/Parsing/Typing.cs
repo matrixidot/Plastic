@@ -1,6 +1,8 @@
 ﻿namespace Plastic.API.Parsing;
 
 using System.Linq.Expressions;
+using static Parser;
+using static Lexing.TokenType;
 
 public static partial class Typing {
     public static Expression EnsureType(Expression expr, Type targetType) {
@@ -38,5 +40,6 @@ public static partial class Typing {
         }
         throw new Exception($"Operand is not a boolean type: {expr.Type}");
     }
+    
     
 }

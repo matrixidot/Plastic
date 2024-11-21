@@ -92,14 +92,14 @@ public class Lexer(string source) {
                 if (Match('*'))
                     AddToken(Match('=') ? POW_EQUAL : POW);
                 else
-                    AddToken(Match('=') ? MULT_EQUAL : STAR);
+                    AddToken(Match('=') ? STAR_EQUAL : STAR);
                 break;
             case '/':
                 if (Match('/')) {
                     while (Peek() != '\n' && !IsAtEnd()) Advance();
                 }
                 else {
-                    AddToken(Match('=') ? DIV_EQUAL : SLASH);
+                    AddToken(Match('=') ? SLASH_EQUAL : SLASH);
                 }
                 break;
             case '%':

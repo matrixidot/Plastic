@@ -2,3 +2,6 @@ print 1+2;
 print "s" + "\t" + 1 + "\nd";
 
 print 16 == 2**4;
+
+int a = 2;
+print a;
