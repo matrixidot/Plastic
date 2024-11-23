@@ -3,5 +3,5 @@ print "s" + "\t" + 1 + "\nd";
 
 print 16 == 2**4;
 
-int a = 2;
-print a;
+
+print 4 & 3 == 0;

@@ -9,66 +9,25 @@ using static API.Lexing.TokenType;
 
 public static class Plastic {
     private static double timer;
-    private static bool timing;
+    public static bool timing;
     private static bool HadError;
     private static bool HadRuntimeError;
     
-    public static void Main(string[] args) {
-        switch (args.Length) {
-            case 1 when args[0].ToLower() == "quit":
-                Console.WriteLine("Quitting Plastic...");
-                return;
-            case >= 1: {
-                timing = bool.Parse(args[1]);
-                string source = File.ReadAllText(args[0]);
-                try {
-                    Run(source);
-                    Console.WriteLine("\nCompleted... Press enter to exit.");
-                    Console.ReadLine();
-                }
-                catch (Exception e) {
-                    Console.WriteLine("Script Running failed...\n");
-                    Console.WriteLine(e.Message);
-                    Console.WriteLine(e.StackTrace);
-                    Console.WriteLine("\nPress enter to exit.");
-                    Console.ReadLine();
-                }
-                break;
-            }
-            default: {
-                Console.Write("Enter script path to run: ");
-                string path = Console.ReadLine();
-                if (path.ToLower() == ".timer") {
-                    timing = !timing;
-                    Console.WriteLine($"Timing: {timing}");
-                    Console.Write("Enter script path to run: ");
-                    path = Console.ReadLine();
-                }
-                
-                if (!Path.Exists(path)) {
-                    Console.WriteLine($"Error: Could not find file '{path}'");
-                    Main(args);
-                }
-                try {
-                    ProcessStartInfo startInfo = new() {
-                        FileName = Environment.ProcessPath,
-                        ArgumentList = { $"{path}", $"{timing}" },
-                        UseShellExecute = true,
-                        WindowStyle = ProcessWindowStyle.Normal,
-                    };
-
-                    Process.Start(startInfo);
-                    Main(args);
-                }
-                catch (Exception ex) {
-                    Console.WriteLine($"Error launching script: {ex.Message}");
-                }
-                break;
-            }
+    public static void Main(string[] args)
+    {
+        if (args.Length >= 1) {
+            timing = bool.Parse(args[1]);
+            string source = File.ReadAllText(args[0]);
+            Run(source);
+            Console.WriteLine("\nCompleted... Press any key to exit.");
+            Console.ReadKey();
+        }
+        else {
+            REPL.Start();
         }
     }
     
-    private static void Run(string source) {
+    public static void Run(string source) {
         InitTimer();
         Lexer lexer = new Lexer(source);
         List<Token> tokens = lexer.LexSource();
